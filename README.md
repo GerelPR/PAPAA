@@ -1,4 +1,4 @@
-# PAPAA
+# PPA
 
 
 During the build process and execution, executables (`alice`, `cloud`, `verif`) and data files (`secret.key`, `cloud.key`, `cloud.data`, `answer.data`) will be created in the project's root directory.
