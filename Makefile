@@ -4,7 +4,6 @@ CFLAGS_BASE = -Wall -Wextra -g # Base CFLAGS, -g for debugging
 OMP_FLAGS = -fopenmp         # OpenMP flag for the computation program
 LIBS = -ltfhe-spqlios-fma -lm # Common libraries for both
 
-# --- Configurable variables for the main computation program (e.g., cloud.c) ---
 NB_BITS ?= 16
 NUM_THREADS ?= 4
 OPERATION_CHOICE ?= 5

@@ -1,42 +1,6 @@
-#include <tfhe/tfhe.h>
-#include <tfhe/tfhe_io.h>
-#include <stdio.h>
-#include <omp.h>
-#include <stdlib.h>
-#include <time.h>
-
-#ifndef NB_BITS_FROM_MAKEFILE
-#define NB_BITS_FROM_MAKEFILE 16
-#endif
-
-#ifndef NUM_THREADS_FROM_MAKEFILE
-#define NUM_THREADS_FROM_MAKEFILE 8 
-#endif
-
-#ifndef OPERATION_CHOICE_FROM_MAKEFILE
-#define OPERATION_CHOICE_FROM_MAKEFILE 2 
-#endif
-
-void print_operation_name(int choice, int nb_bits) {
-    printf("Executing with NB_BITS = %d\n", nb_bits);
-    switch (choice) {
-        case 1: printf("Operation: Minimum\n"); break;
-        case 2: printf("Operation: Ripple Adder\n"); break;
-        case 3: printf("Operation: Brent-Kung Adder\n"); break;
-        case 4: printf("Operation: Kogge-Stone Adder\n"); break;
-        case 5: printf("Operation: Sklansky Adder\n"); break;
-        case 6: printf("Operation: Han-Carlson Adder\n"); break;
-        case 7: printf("Operation: Ripple Subtractor\n"); break;
-        case 8: printf("Operation: Brent-Kung Subtractor\n"); break;
-        case 9: printf("Operation: Kogge-Stone Subtractor\n"); break;
-        case 10: printf("Operation: Sklansky Subtractor\n"); break;
-        case 11: printf("Operation: Han-Carlson Subtractor\n"); break;
-        case 12: printf("Operation: Ladner-Fischer Adder\n"); break;
-        case 13: printf("Operation: Ladner-Fischer Subtractor\n"); break;
-        case 14: printf("Operation: Benchmark Basic Gates\n"); break;
-        default: printf("Operation: Unknown/Default (Choice %d)\n", choice); break;
-    }
-}
+#include "adders.h" 
+#include <tfhe/tfhe.h> 
+#include <omp.h>       
 
 // elementary full comparator gate that is used to compare the i-th bit:
 //   input: ai and bi the i-th bit of a and b
@@ -117,8 +81,7 @@ void ripple_subtractor(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext(borrow);
 }
 
-void ripple_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("ripple_adder\n");
+void ripple_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
 
     // Allocate a ciphertext for the carry and initialize it to 0
     LweSample* carry = new_gate_bootstrapping_ciphertext(bk->params);
@@ -158,8 +121,8 @@ void minimum(LweSample* result, const LweSample* a, const LweSample* b, const in
     delete_gate_bootstrapping_ciphertext_array(2, tmps);    
 }
 
-void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Brent kung adder\n");
+void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     LweSample* temp_G = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
     LweSample* temp_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
 
@@ -235,8 +198,8 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_P_odtoi);
 }
 
-void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Brent kung subtructor\n");
+void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     LweSample* temp_G = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
     LweSample* temp_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
     LweSample* not_b = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -321,8 +284,8 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_P_odtoi);
 }
 
-void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Kogge-Stone adder\n");
+void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for initial and current P and G arrays
     LweSample* current_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -369,8 +332,8 @@ void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext_array(nb_bits, current_G);
 }
 
-void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Sklansky adder\n");
+void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
 
     // Allocate arrays for propagate (P) and generate (G)
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -409,8 +372,8 @@ void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, i
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
 
-void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Kogge-Stone subtractor\n");
+void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for initial and current P and G arrays
     LweSample* current_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -465,8 +428,8 @@ void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSamp
     delete_gate_bootstrapping_ciphertext_array(nb_bits, current_G);
 }
 
-void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Sklansky subtractor\n");
+void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
 
     // Allocate arrays for propagate (P) and generate (G)
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -519,8 +482,8 @@ void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample*
 }
 
 
-void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Han-Carlson adder\n");
+void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -581,8 +544,8 @@ void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_G);
 }
 
-void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Han-Carlson subtractor\n");
+void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -656,8 +619,8 @@ void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSamp
 }
 
 
-void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Ladner-Fischer adder\n");
+void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -710,8 +673,8 @@ void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
 
-void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Ladner-Fischer subtractor\n");
+void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals and negated b
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -777,165 +740,3 @@ void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweS
     delete_gate_bootstrapping_ciphertext_array(nb_bits, P);
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
-
-
-void benchmark_single_gate(
-    const char* gate_name,
-    void (*gate_function_2_inputs)(LweSample*, const LweSample*, const LweSample*, const TFheGateBootstrappingCloudKeySet*), // For AND, OR, XOR etc.
-    void (*gate_function_1_input)(LweSample*, const LweSample*, const TFheGateBootstrappingCloudKeySet*),                 // For NOT
-    const TFheGateBootstrappingCloudKeySet* bk,
-    int iterations) {
-
-    printf("Benchmarking %s gate (%d iterations)...\n", gate_name, iterations);
-
-    LweSample* res_bit = new_gate_bootstrapping_ciphertext(bk->params);
-    LweSample* input1_bit = new_gate_bootstrapping_ciphertext(bk->params);
-    LweSample* input2_bit = NULL; // Only needed for 2-input gates
-
-    // Initialize inputs (can be constant or varied if needed for testing)
-    bootsCONSTANT(input1_bit, 0, bk); // Encrypt(0)
-
-    if (gate_function_2_inputs != NULL) { // If it's a 2-input gate
-        input2_bit = new_gate_bootstrapping_ciphertext(bk->params);
-        bootsCONSTANT(input2_bit, 1, bk); // Encrypt(1)
-    }
-
-    // Warm-up (optional, can help stabilize timings by running once before measurement)
-    if (gate_function_2_inputs != NULL) {
-        gate_function_2_inputs(res_bit, input1_bit, input2_bit, bk);
-    } else if (gate_function_1_input != NULL) {
-        gate_function_1_input(res_bit, input1_bit, bk);
-    }
-
-    double total_duration_seconds = 0.0;
-    double start_time = omp_get_wtime();
-
-    for (int i = 0; i < iterations; ++i) {
-        if (gate_function_2_inputs != NULL) {
-            gate_function_2_inputs(res_bit, input1_bit, input2_bit, bk);
-        } else if (gate_function_1_input != NULL) {
-            gate_function_1_input(res_bit, input1_bit, bk);
-        }
-    }
-
-    double end_time = omp_get_wtime();
-    total_duration_seconds = end_time - start_time;
-
-    if (iterations > 0) {
-        double avg_duration_ms = (total_duration_seconds / iterations) * 1000.0;
-        printf("Total time for %d %s operations: %.4f seconds.\n", iterations, gate_name, total_duration_seconds);
-        printf("Average time per %s operation: %.4f ms.\n", gate_name, avg_duration_ms);
-    } else {
-        printf("No iterations performed for %s.\n", gate_name);
-    }
-
-    // Cleanup
-    delete_gate_bootstrapping_ciphertext(res_bit);
-    delete_gate_bootstrapping_ciphertext(input1_bit);
-    if (input2_bit != NULL) {
-        delete_gate_bootstrapping_ciphertext(input2_bit);
-    }
-    printf("--------------------------------------------\n");
-}
-
-
-int main() {
-    // int nb_bits = 16;
-
-    int nb_bits = NB_BITS_FROM_MAKEFILE;
-    int num_threads_to_set = NUM_THREADS_FROM_MAKEFILE;
-    int choice = OPERATION_CHOICE_FROM_MAKEFILE;
-
-    omp_set_num_threads(num_threads_to_set);
-    printf("Attempting to use %d OpenMP threads. Actual max threads available: %d\n", num_threads_to_set, omp_get_max_threads());
-
-    //reads the cloud key from file
-    FILE* cloud_key = fopen("cloud.key", "rb");
-    TFheGateBootstrappingCloudKeySet* bk = new_tfheGateBootstrappingCloudKeySet_fromFile(cloud_key);
-    fclose(cloud_key);
- 
-    //if necessary, the params are inside the key
-    const TFheGateBootstrappingParameterSet* params = bk->params;
-
-    //read the 2x16 ciphertexts
-    LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-    LweSample* ciphertext2 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-
-    //reads the 2x16 ciphertexts from the cloud file
-    FILE* cloud_data = fopen("cloud.data", "rb");
-    for (int i = 0; i < nb_bits; i++) import_gate_bootstrapping_ciphertext_fromFile(cloud_data, &ciphertext1[i], params);
-    for (int i = 0; i < nb_bits; i++) import_gate_bootstrapping_ciphertext_fromFile(cloud_data, &ciphertext2[i], params);
-    fclose(cloud_data);
-
-    // Allocate result array
-    LweSample* result = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-
-    print_operation_name(choice, nb_bits); // Print the chosen operation
-
-    double start_time = omp_get_wtime();
-
-    // Execute the selected operation
-    switch (choice) {
-        case 1:
-            minimum(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 2:
-            ripple_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 3:
-            brent_kung_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 4:
-            kogge_stone_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 5:
-            sklansky_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 6:
-            han_carlson_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 7:
-            ripple_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 8:
-            brent_kung_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 9:
-            kogge_stone_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 10:
-            sklansky_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 11:
-            han_carlson_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 12:
-            ladner_fischer_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 13:
-            ladner_fischer_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        default:
-            printf("Invalid choice. Using Han-Carlson subtractor as default.\n");
-            han_carlson_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-    }    
-
-    double end_time = omp_get_wtime();
-    printf("Selected operation execution time: %.4f seconds.\n", end_time - start_time);
-
-    // Export the result to a file
-    FILE* answer_data = fopen("answer.data", "wb");
-    for (int i = 0; i < nb_bits; i++) export_gate_bootstrapping_ciphertext_toFile(answer_data, &result[i], params);
-    fclose(answer_data);
-
-    printf("Operation completed and result saved to answer.data\n");
-
-    // Clean up all pointers
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, result);
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext2);
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext1);
-    delete_gate_bootstrapping_cloud_keyset(bk);
-
-    return 0;
-}
-

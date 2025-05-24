@@ -30,8 +30,8 @@ int main(int argc, char *argv[]) {
 
     printf("Using NB_BITS = %d for encryption.\n", nb_bits);    
 
-    int16_t plaintext1 = 55;
-    int16_t plaintext2 = 15;
+    int16_t plaintext1 = 85;
+    int16_t plaintext2 = 42;
 
     LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
     for (int i=0; i<nb_bits; i++) {

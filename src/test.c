@@ -1,7 +1,7 @@
 #include <tfhe/tfhe.h>
-#include <omp.h>    // For omp_get_wtime()
+#include <omp.h>    
 #include <stdio.h>
-#include <string.h> // For strcmp
+#include <string.h> 
 
 // Function to benchmark a gate, including input copying in each iteration
 void benchmark_gate_with_per_iteration_copy(
