@@ -4,14 +4,14 @@
 #include <omp.h>
 #include <stdlib.h> 
 #include <stdint.h> 
-#include <time.h>
+#include <chrono>
 
-#ifndef NB_BITS_DEFAULT 
-#define NB_BITS_DEFAULT 16
+#ifndef NB_BITS 
+#define NB_BITS 16
 #endif
 
-#ifndef NUM_THREADS_DEFAULT 
-#define NUM_THREADS_DEFAULT 8
+#ifndef NUM_THREADS 
+#define NUM_THREADS 8
 #endif
 
 typedef struct {
@@ -20,20 +20,14 @@ typedef struct {
 } AdderInfo;
 
 int main(int argc, char *argv[]) {
-    int nb_bits_arg;
-    int num_threads_arg;
 
-    nb_bits_arg = atoi(argv[1]);
-    num_threads_arg = atoi(argv[2]);
-
-    const int nb_bits = nb_bits_arg;
-    const int num_threads = num_threads_arg;
+    const int nb_bits = atoi(argv[1]);
+    const int num_threads = atoi(argv[2]);
 
     printf("FHE operations will use nb_bits = %d\n", nb_bits);
     printf("Attempting to use %d OpenMP threads. Actual max threads available: %d\n", num_threads, omp_get_max_threads());
     printf("--------------------------------------------\n");
 
-    // 1. Key Generation
     printf("Generating keys...\n");
     const int minimum_lambda = 110;
     TFheGateBootstrappingParameterSet* params = new_default_gate_bootstrapping_parameters(minimum_lambda);
@@ -43,10 +37,8 @@ int main(int argc, char *argv[]) {
 
     TFheGateBootstrappingSecretKeySet* sk = new_random_gate_bootstrapping_secret_keyset(params);
     const TFheGateBootstrappingCloudKeySet* bk = &sk->cloud;
-    printf("Keys generated.\n");
     printf("--------------------------------------------\n");
 
-    // 2. Plaintexts (source int16_t) and Encryption (using nb_bits)
     int16_t plaintext1_orig_val = 15;
     int16_t plaintext2_orig_val = 42;
 
@@ -65,10 +57,8 @@ int main(int argc, char *argv[]) {
         bootsSymEncrypt(&ciphertext1[i], bit1, sk);
         bootsSymEncrypt(&ciphertext2[i], bit2, sk);
     }
-    printf("Encryption complete.\n");
     printf("--------------------------------------------\n");
 
-    // 3. Define Adders to Test
     AdderInfo adders_to_test[] = {
         {"BKA", brent_kung_adder},
         {"HCA", han_carlson_adder},
@@ -79,18 +69,31 @@ int main(int argc, char *argv[]) {
     };
     const int num_adders = sizeof(adders_to_test) / sizeof(adders_to_test[0]);
 
-    // 4. Execute and Time Each Adder
+    printf("Gate Benchmark:\n");
+    int gate_iterations = 10;
+    LweSample* gate_result = new_gate_bootstrapping_ciphertext(params);
+    
+    auto gate_start = std::chrono::steady_clock::now();
+    for (int i = 0; i < gate_iterations; i++) {
+        bootsAND(gate_result, &ciphertext1[0], &ciphertext2[0], bk);
+    }
+    auto gate_end = std::chrono::steady_clock::now();
+    auto gate_diff = gate_end - gate_start;
+    int gate_ms = std::chrono::duration<double, std::milli>(gate_diff).count();
+    printf("Gate duration: %.2f ms\n", (double)gate_ms / gate_iterations);
+    printf("--------------------------------------------\n");
+
     for (int i = 0; i < num_adders; ++i) {
         AdderInfo adder_info = adders_to_test[i];
         LweSample* result_ciphertext = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
 
-        clock_t start_time = clock();
+        auto start = std::chrono::steady_clock::now();
         adder_info.function(result_ciphertext, ciphertext1, ciphertext2, nb_bits, bk, num_threads);
-        clock_t end_time = clock();
+        auto end = std::chrono::steady_clock::now();
 
-        double duration_sec = (double)(end_time - start_time) * 1000.0 / CLOCKS_PER_SEC;
+        auto diff = end - start;
+        int sec = std::chrono::duration<double, std::milli>(diff).count();
 
-        // Decrypt result
         int64_t raw_decrypted_pattern = 0;
         for (int k = 0; k < nb_bits; k++) {
             int bit = bootsSymDecrypt(&result_ciphertext[k], sk);
@@ -104,17 +107,14 @@ int main(int argc, char *argv[]) {
 
         delete_gate_bootstrapping_ciphertext_array(nb_bits, result_ciphertext);
 
-        printf("%s elapsed_time: %.1f ms, ans: %ld\n", adder_info.name, duration_sec, accumulated_decrypted_value);
+        printf("%s elapsed time: %d ms, ans: %ld\n", adder_info.name, sec, accumulated_decrypted_value);
     }
     printf("--------------------------------------------\n");
 
-    // 5. Cleanup
-    printf("Cleaning up resources...\n");
     delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext1);
     delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext2);
     delete_gate_bootstrapping_secret_keyset(sk);
     delete_gate_bootstrapping_parameters(params);
-    printf("Cleanup complete. Exiting.\n");
 
     return 0;
 }

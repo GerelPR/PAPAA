@@ -1,42 +1,42 @@
-#include <tfhe/tfhe.h>
-#include <tfhe/tfhe_io.h>
-#include <stdio.h>
-#include <omp.h>
-#include <stdlib.h>
-#include <time.h>
+#include "adders.h" 
+#include <tfhe/tfhe.h> 
+#include <omp.h>       
 
-#ifndef NB_BITS_FROM_MAKEFILE
-#define NB_BITS_FROM_MAKEFILE 16
-#endif
-
-#ifndef NUM_THREADS_FROM_MAKEFILE
-#define NUM_THREADS_FROM_MAKEFILE 8 
-#endif
-
-#ifndef OPERATION_CHOICE_FROM_MAKEFILE
-#define OPERATION_CHOICE_FROM_MAKEFILE 2 
-#endif
-
-void print_operation_name(int choice, int nb_bits) {
-    printf("Executing with NB_BITS = %d\n", nb_bits);
-    switch (choice) {
-        case 1: printf("Operation: Minimum\n"); break;
-        case 2: printf("Operation: Ripple Adder\n"); break;
-        case 3: printf("Operation: Brent-Kung Adder\n"); break;
-        case 4: printf("Operation: Kogge-Stone Adder\n"); break;
-        case 5: printf("Operation: Sklansky Adder\n"); break;
-        case 6: printf("Operation: Han-Carlson Adder\n"); break;
-        case 7: printf("Operation: Ripple Subtractor\n"); break;
-        case 8: printf("Operation: Brent-Kung Subtractor\n"); break;
-        case 9: printf("Operation: Kogge-Stone Subtractor\n"); break;
-        case 10: printf("Operation: Sklansky Subtractor\n"); break;
-        case 11: printf("Operation: Han-Carlson Subtractor\n"); break;
-        case 12: printf("Operation: Ladner-Fischer Adder\n"); break;
-        case 13: printf("Operation: Ladner-Fischer Subtractor\n"); break;
-        case 14: printf("Operation: Benchmark Basic Gates\n"); break;
-        default: printf("Operation: Unknown/Default (Choice %d)\n", choice); break;
-    }
-}
+// General Parameter Guide:
+// Many functions in this file operate on encrypted data using the TFHE library.
+// Here's a brief description of common parameters you'll encounter:
+//
+// - LweSample* result / sum / diff / borrow_out / carry_out:
+//   Pointer to an LWE ciphertext (or an array of them) where the output of the
+//   homomorphic operation (e.g., sum, difference, comparison flag) is stored.
+//   Each LweSample typically encrypts a single bit.
+//
+// - const LweSample* a / b:
+//   Pointers to LWE ciphertext arrays representing the input operands.
+//   'a' is generally the first operand, and 'b' is the second.
+//   Each element in these arrays encrypts a single bit of the operand.
+//
+// - const LweSample* lsb_carry / carry_in / borrow_in:
+//   Pointer to an LWE ciphertext encrypting a single bit, representing a carry or
+//   borrow input from a less significant stage or a propagated comparison result.
+//   For comparison functions, this often carries the result of comparing more significant bits.
+//
+// - LweSample* tmp / other temporary LweSample*:
+//   Pointers to LWE ciphertexts used for storing intermediate results during
+//   the gate computations. These are usually allocated and deallocated within the function.
+//
+// - const TFheGateBootstrappingCloudKeySet* bk:
+//   Pointer to the TFHE bootstrapping cloud key set. This key is essential for
+//   performing homomorphic gate operations (like AND, OR, XOR, MUX, etc.) as it
+//   allows for noise reduction through bootstrapping, enabling deep computations.
+//
+// - int nb_bits:
+//   An integer specifying the number of bits for the operands 'a', 'b', and the 'result'.
+//   This determines the size of the LweSample arrays used for multi-bit numbers.
+//
+// - int thread_num:
+//   An integer indicating the number of threads to be used for parallelizing
+//   computations, typically with OpenMP.
 
 // elementary full comparator gate that is used to compare the i-th bit:
 //   input: ai and bi the i-th bit of a and b
@@ -47,7 +47,11 @@ void compare_bit(LweSample* result, const LweSample* a, const LweSample* b, cons
     bootsMUX(result, tmp, lsb_carry, a, bk);
 }
 
-// Half subtractor: computes sum = a XOR b and carry = not(a) AND b
+// Computes a single-bit half subtraction.
+// A half subtractor takes two single bit inputs, 'a' and 'b', and produces two outputs:
+// a difference bit ('diff') and a borrow bit ('borrow').
+// - The difference bit is 'a' XOR 'b'.
+// - The borrow bit is 'NOT(a)' AND 'b', indicating if a borrow is needed from the next higher bit.
 void half_subtractor(LweSample* diff, LweSample* borrow, const LweSample* a, const LweSample* b, const TFheGateBootstrappingCloudKeySet* bk) {
     bootsXOR(diff, a, b, bk);  // Difference bit is a XOR b
     LweSample* nota = new_gate_bootstrapping_ciphertext(bk->params);
@@ -63,7 +67,11 @@ void half_adder(LweSample* sum, LweSample* carry, const LweSample* a, const LweS
     bootsAND(carry, a, b, bk);  // Carry occurs when a AND b
 }
 
-// Full adder: computes sum and carry_out from a, b and carry_in
+// Computes a single-bit full addition.
+// A full adder takes three single bit inputs: 'a', 'b', and 'carry_in' (carry from the previous less significant stage).
+// It produces two outputs: a sum bit ('sum') and a carry_out bit ('carry_out').
+// - The sum bit is 'a' XOR 'b' XOR 'carry_in'.
+// - The carry_out bit is '(a AND b) OR (carry_in AND (a XOR b))'.
 void full_adder(LweSample* sum, LweSample* carry_out, const LweSample* a, const LweSample* b, const LweSample* carry_in, const TFheGateBootstrappingCloudKeySet* bk) {
     // Temporary ciphertext for a XOR b
     LweSample* axorb = new_gate_bootstrapping_ciphertext(bk->params);
@@ -80,7 +88,8 @@ void full_adder(LweSample* sum, LweSample* carry_out, const LweSample* a, const 
     delete_gate_bootstrapping_ciphertext(axorb_and_carry);
 }
 
-// Full subtractor: computes sum and carry_out from a, b and carry_in
+// Performs multi-bit subtraction (a - b) using a ripple-borrow subtractor design.
+// The subtraction is done bit by bit, from the least significant bit (LSB) to the most significant bit (MSB).
 void full_subtractor(LweSample* diff, LweSample* borrow_out, const LweSample* a, const LweSample* b, const LweSample* borrow_in, const TFheGateBootstrappingCloudKeySet* bk) {
     LweSample* axorb = new_gate_bootstrapping_ciphertext(bk->params);
     LweSample* notaandb = new_gate_bootstrapping_ciphertext(bk->params);
@@ -97,7 +106,7 @@ void full_subtractor(LweSample* diff, LweSample* borrow_out, const LweSample* a,
     delete_gate_bootstrapping_ciphertext(temp);
 }
 
-// Ripple subtractor: subtracts b from a (a - b) for nb_bits words.
+// Ripple subtractor: subtracts b from a (a - b) for nb_bits number.
 // The result is stored in the 'result' array.
 void ripple_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
     // Initialize the borrow to 0.
@@ -117,8 +126,11 @@ void ripple_subtractor(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext(borrow);
 }
 
-void ripple_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("ripple_adder\n");
+// Performs multi-bit addition (a + b) using a ripple-carry adder design.
+// The addition is done bit by bit, from the LSB to the MSB.
+// A half_adder is used for the LSB, and full_adders are used for the remaining bits.
+// The carry out of one stage is rippled (fed as carry_in) to the next stage.
+void ripple_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
 
     // Allocate a ciphertext for the carry and initialize it to 0
     LweSample* carry = new_gate_bootstrapping_ciphertext(bk->params);
@@ -158,19 +170,28 @@ void minimum(LweSample* result, const LweSample* a, const LweSample* b, const in
     delete_gate_bootstrapping_ciphertext_array(2, tmps);    
 }
 
-void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Brent kung adder\n");
-    LweSample* temp_G = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
-    LweSample* temp_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
+// Implements a Brent-Kung parallel prefix adder for 'nb_bits' numbers 'a' and 'b'.
+// The process involves:
+// 1. Initial computation of Propagate (P_i = a_i XOR b_i) and Generate (G_i = a_i AND b_i) signals for each bit.
+// 2. A "prefix tree" or "up-sweep" phase to compute group P and G signals.
+// 3. A "carry generation" or "down-sweep" phase to efficiently compute all carries C_i from the group signals.
+// 4. Final sum computation: S_i = P_i XOR C_{i-1}.
+void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
+    LweSample* temp_G = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params); // Stores Generate signals
+    LweSample* temp_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);   // Stores Propagate signals
 
     #pragma omp parallel for
     for (int i = 0; i < nb_bits; i++) {
         bootsXOR(&result[i], &a[i], &b[i], bk); // Compute P[i] = a[i] XOR b[i]
         bootsAND(&temp_G[i], &a[i], &b[i], bk); // Compute G[i] = a[i] AND b[i]
-        bootsCOPY(&temp_P[i], &result[i], bk);
+        bootsCOPY(&temp_P[i], &result[i], bk);  // Copy P[i] to temp_P[i]
+
     }
 
-    // Compute carry signals for bits 1..nb_bits-1 in parallel.
+    // Phase 1: Prefix computation (up-sweep like)
+    // Computes group (G,P) signals: (G_new, P_new) = (G_left, P_left) . (G_right, P_right)
+    // where '.' is (G_l | (P_l & G_r), P_l & P_r)
     for (int step = 1; (step) <= nb_bits; (step <<= 1)) {  // Log n iterations
         #pragma omp parallel for
         for (int i = (step << 1) - 1; i < nb_bits; i+=(step << 1)) {
@@ -182,7 +203,8 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
         }
     }
 
-    // Compute carry signals for bits nb_bits-1..1 in parallel.
+    // Phase 2: Carry generation / distribution (down-sweep like)
+    // This part reconstructs carries using the precomputed group G/P values.
     LweSample* temp_G_odtoi = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
     LweSample* temp_P_odtoi = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
     
@@ -198,6 +220,7 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
     for (int step = n_huwaah_2; step > 1; (step = step >> 1), j++) {
         #pragma omp parallel for
         for (int i = step - 1; i < nb_bits; i=i+step) {
+            // Conditional application of prefix operator based on index and step
             if (((i - (step - 1)) % (step << 1) == 0) && (j != 0)){ 
                 LweSample* temp = new_gate_bootstrapping_ciphertext(bk->params);
                 bootsAND(temp, &temp_P[i], &temp_G_odtoi[i], bk);
@@ -205,6 +228,7 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
                 bootsAND(&temp_P[i], &temp_P[i], &temp_P_odtoi[i], bk);
                 delete_gate_bootstrapping_ciphertext(temp);
             }
+            // Propagate G/P values for the next iteration/level of the down-sweep
             if (i + (step >> 1) < nb_bits){
                 bootsCOPY(&temp_G_odtoi[i + (step >> 1)], &temp_G[i], bk);
                 bootsCOPY(&temp_P_odtoi[i + (step >> 1)], &temp_P[i], bk);
@@ -212,9 +236,8 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
         }
     }
     
-    // Compute carry signals for bits nb_bits-1..1 in parallel.
     #pragma omp parallel for 
-    for (int i = 2; i < nb_bits; i+=2) {
+    for (int i = 2; i < nb_bits; i+=2) { // Final carry calculations for some positions
         LweSample* temp = new_gate_bootstrapping_ciphertext(bk->params);
         bootsAND(temp, &temp_P[i], &temp_G_odtoi[i], bk);
         bootsOR(&temp_G[i], &temp_G[i], temp, bk);
@@ -222,7 +245,8 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
         delete_gate_bootstrapping_ciphertext(temp);
     }
 
-    // // Compute the sum bits: result[i] = P[i] XOR C[i]
+    // Phase 3: Compute sum bits: result[i] = P_initial[i] XOR C[i-1]
+    // P_initial[i] is already in result[i]. C[i-1] is effectively temp_G[i-1] after all computations.
     #pragma omp parallel for
     for (int i = 1; i < nb_bits; i++) {
         bootsXOR(&result[i], &result[i], &temp_G[i-1], bk);
@@ -235,8 +259,15 @@ void brent_kung_adder(LweSample* result, const LweSample* a, const LweSample* b,
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_P_odtoi);
 }
 
-void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Brent kung subtructor\n");
+// Implements a Brent-Kung parallel prefix subtractor for 'nb_bits' (a - b).
+// Subtraction a - b is typically done as a + NOT(b) + 1.
+// The Brent-Kung structure is similar to the adder:
+// 1. Initial P' (a XNOR b) and G' (a AND NOT(b)) signals.
+// 2. Parallel prefix tree ("up-sweep") and carry distribution ("down-sweep") phases for P' and G'.
+// 3. Final difference: D_0 = P'_0 XOR C_{-1} (where C_{-1}=1, so D_0 = NOT(P'_0)).
+//    D_i = P'_i XOR C'_{i-1} for i > 0. C'_{i-1} are carries generated assuming C_{-1}=1.
+void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     LweSample* temp_G = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
     LweSample* temp_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
     LweSample* not_b = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -250,7 +281,6 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
     }
 
     delete_gate_bootstrapping_ciphertext_array(nb_bits, not_b);
-    // Compute carry signals for bits 1..nb_bits-1 in parallel.
     for (int step = 1; (step) <= nb_bits; (step <<= 1)) {  // Log n iterations
         #pragma omp parallel for
         for (int i = (step << 1) - 1; i < nb_bits; i+=(step << 1)) {
@@ -262,7 +292,6 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
         }
     }
 
-    // Compute carry signals for bits nb_bits-1..1 in parallel.
     LweSample* temp_G_odtoi = new_gate_bootstrapping_ciphertext_array(nb_bits+1, bk->params);
     LweSample* temp_P_odtoi = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
     
@@ -274,7 +303,6 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
 
     int j = 0;
     int n_huwaah_2 = (nb_bits >> 1);
-    // Compute carry signals for bits nb_bits-1..1 in parallel.
     for (int step = n_huwaah_2; step > 1; (step = step >> 1), j++) {
         #pragma omp parallel for
         for (int i = step - 1; i < nb_bits; i=i+step) {
@@ -292,7 +320,6 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
         }
     }
     
-    // Compute carry signals for bits nb_bits-1..1 in parallel.
     #pragma omp parallel for 
     for (int i = 2; i < nb_bits; i+=2) {
         LweSample* temp = new_gate_bootstrapping_ciphertext(bk->params);
@@ -307,7 +334,6 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
     bootsCOPY(&result[0], temp, bk);
     delete_gate_bootstrapping_ciphertext(temp);
 
-    // // Compute the sum bits: result[i] = P[i] XOR C[i]
     #pragma omp parallel for
     for (int i = 1; i < nb_bits; i++) {
         bootsXOR(&temp_G[i-1], &temp_G[i-1], &temp_P[i-1], bk);
@@ -321,8 +347,14 @@ void brent_kung_subtractor(LweSample* result, const LweSample* a, const LweSampl
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_P_odtoi);
 }
 
-void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Kogge-Stone adder\n");
+// Implements a Kogge-Stone parallel prefix adder.
+// 1. Initial P (a XOR b) and G (a AND b) signals.
+// 2. Parallel prefix computation: For log n stages, (G,P) pairs are combined.
+//    (G_new, P_new) = (G_current, P_current) . (G_from_distance_step, P_from_distance_step)
+//    The G signals after this stage are the carries C_i (assuming C_{-1}=0).
+// 3. Final sum: S_i = P_initial_i XOR C_{i-1}.
+void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for initial and current P and G arrays
     LweSample* current_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -369,8 +401,15 @@ void kogge_stone_adder(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext_array(nb_bits, current_G);
 }
 
-void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Sklansky adder\n");
+// Implements a Sklansky parallel prefix adder.
+// Sklansky adders aim for reduced fan-out compared to Kogge-Stone, potentially at the cost of more complex cell interconnections or slightly more logic levels in some variations.
+// 1. Initial P (a XOR b) and G (a AND b) signals.
+// 2. Sklansky parallel prefix computation: Uses a specific tree structure to combine (G,P) pairs.
+//    The condition `i % (step << 1) >= step` selects specific nodes in the Sklansky tree for computation.
+//    The G signals after this are the carries C_i (assuming C_{-1}=0).
+// 3. Final sum: S_i = P_initial_i XOR C_{i-1}.
+void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
 
     // Allocate arrays for propagate (P) and generate (G)
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -409,8 +448,8 @@ void sklansky_adder(LweSample* result, const LweSample* a, const LweSample* b, i
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
 
-void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Kogge-Stone subtractor\n");
+void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for initial and current P and G arrays
     LweSample* current_P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -465,8 +504,8 @@ void kogge_stone_subtractor(LweSample* result, const LweSample* a, const LweSamp
     delete_gate_bootstrapping_ciphertext_array(nb_bits, current_G);
 }
 
-void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Sklansky subtractor\n");
+void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
 
     // Allocate arrays for propagate (P) and generate (G)
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -518,9 +557,13 @@ void sklansky_subtractor(LweSample* result, const LweSample* a, const LweSample*
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
 
-
-void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Han-Carlson adder\n");
+// Implements a Han-Carlson parallel prefix adder.
+// It involves three main stages:
+// 1. Pre-computation: Group (G,P) for blocks of 2 are formed for odd-indexed bits.
+// 2. Parallel Prefix Tree: A Kogge-Stone-like prefix computation is run on these odd-indexed (G,P) pairs.
+// 3. Post-computation: Carries for even-indexed bits are computed using results from their odd-indexed neighbors.
+void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -581,8 +624,8 @@ void han_carlson_adder(LweSample* result, const LweSample* a, const LweSample* b
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_G);
 }
 
-void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Han-Carlson subtractor\n");
+void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -655,9 +698,16 @@ void han_carlson_subtractor(LweSample* result, const LweSample* a, const LweSamp
     delete_gate_bootstrapping_ciphertext_array(nb_bits, temp_G);
 }
 
-
-void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Ladner-Fischer adder\n");
+// Implements a Ladner-Fischer parallel prefix adder.
+// The specific structure of loops and conditions defines the trade-offs in terms of fan-out and wiring.
+// 1. Initial P (a XOR b) and G (a AND b) signals.
+// 2. Ladner-Fischer prefix computation: Consists of stages where (G,P) pairs are combined.
+//    The first loop computes prefix values for odd-indexed positions.
+//    The second loop computes prefix values for even-indexed positions using results from odd ones.
+//    G[k] after this process represents carry C[k].
+// 3. Final sum: S_i = P_initial_i XOR C_{i-1}.
+void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -710,8 +760,8 @@ void ladner_fischer_adder(LweSample* result, const LweSample* a, const LweSample
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
 
-void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk) {
-    printf("Ladner-Fischer subtractor\n");
+void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+    omp_set_num_threads(thread_num);
     
     // Allocate memory for propagate (P) and generate (G) signals and negated b
     LweSample* P = new_gate_bootstrapping_ciphertext_array(nb_bits, bk->params);
@@ -777,165 +827,3 @@ void ladner_fischer_subtractor(LweSample* result, const LweSample* a, const LweS
     delete_gate_bootstrapping_ciphertext_array(nb_bits, P);
     delete_gate_bootstrapping_ciphertext_array(nb_bits, G);
 }
-
-
-void benchmark_single_gate(
-    const char* gate_name,
-    void (*gate_function_2_inputs)(LweSample*, const LweSample*, const LweSample*, const TFheGateBootstrappingCloudKeySet*), // For AND, OR, XOR etc.
-    void (*gate_function_1_input)(LweSample*, const LweSample*, const TFheGateBootstrappingCloudKeySet*),                 // For NOT
-    const TFheGateBootstrappingCloudKeySet* bk,
-    int iterations) {
-
-    printf("Benchmarking %s gate (%d iterations)...\n", gate_name, iterations);
-
-    LweSample* res_bit = new_gate_bootstrapping_ciphertext(bk->params);
-    LweSample* input1_bit = new_gate_bootstrapping_ciphertext(bk->params);
-    LweSample* input2_bit = NULL; // Only needed for 2-input gates
-
-    // Initialize inputs (can be constant or varied if needed for testing)
-    bootsCONSTANT(input1_bit, 0, bk); // Encrypt(0)
-
-    if (gate_function_2_inputs != NULL) { // If it's a 2-input gate
-        input2_bit = new_gate_bootstrapping_ciphertext(bk->params);
-        bootsCONSTANT(input2_bit, 1, bk); // Encrypt(1)
-    }
-
-    // Warm-up (optional, can help stabilize timings by running once before measurement)
-    if (gate_function_2_inputs != NULL) {
-        gate_function_2_inputs(res_bit, input1_bit, input2_bit, bk);
-    } else if (gate_function_1_input != NULL) {
-        gate_function_1_input(res_bit, input1_bit, bk);
-    }
-
-    double total_duration_seconds = 0.0;
-    double start_time = omp_get_wtime();
-
-    for (int i = 0; i < iterations; ++i) {
-        if (gate_function_2_inputs != NULL) {
-            gate_function_2_inputs(res_bit, input1_bit, input2_bit, bk);
-        } else if (gate_function_1_input != NULL) {
-            gate_function_1_input(res_bit, input1_bit, bk);
-        }
-    }
-
-    double end_time = omp_get_wtime();
-    total_duration_seconds = end_time - start_time;
-
-    if (iterations > 0) {
-        double avg_duration_ms = (total_duration_seconds / iterations) * 1000.0;
-        printf("Total time for %d %s operations: %.4f seconds.\n", iterations, gate_name, total_duration_seconds);
-        printf("Average time per %s operation: %.4f ms.\n", gate_name, avg_duration_ms);
-    } else {
-        printf("No iterations performed for %s.\n", gate_name);
-    }
-
-    // Cleanup
-    delete_gate_bootstrapping_ciphertext(res_bit);
-    delete_gate_bootstrapping_ciphertext(input1_bit);
-    if (input2_bit != NULL) {
-        delete_gate_bootstrapping_ciphertext(input2_bit);
-    }
-    printf("--------------------------------------------\n");
-}
-
-
-int main() {
-    // int nb_bits = 16;
-
-    int nb_bits = NB_BITS_FROM_MAKEFILE;
-    int num_threads_to_set = NUM_THREADS_FROM_MAKEFILE;
-    int choice = OPERATION_CHOICE_FROM_MAKEFILE;
-
-    omp_set_num_threads(num_threads_to_set);
-    printf("Attempting to use %d OpenMP threads. Actual max threads available: %d\n", num_threads_to_set, omp_get_max_threads());
-
-    //reads the cloud key from file
-    FILE* cloud_key = fopen("cloud.key", "rb");
-    TFheGateBootstrappingCloudKeySet* bk = new_tfheGateBootstrappingCloudKeySet_fromFile(cloud_key);
-    fclose(cloud_key);
- 
-    //if necessary, the params are inside the key
-    const TFheGateBootstrappingParameterSet* params = bk->params;
-
-    //read the 2x16 ciphertexts
-    LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-    LweSample* ciphertext2 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-
-    //reads the 2x16 ciphertexts from the cloud file
-    FILE* cloud_data = fopen("cloud.data", "rb");
-    for (int i = 0; i < nb_bits; i++) import_gate_bootstrapping_ciphertext_fromFile(cloud_data, &ciphertext1[i], params);
-    for (int i = 0; i < nb_bits; i++) import_gate_bootstrapping_ciphertext_fromFile(cloud_data, &ciphertext2[i], params);
-    fclose(cloud_data);
-
-    // Allocate result array
-    LweSample* result = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
-
-    print_operation_name(choice, nb_bits); // Print the chosen operation
-
-    double start_time = omp_get_wtime();
-
-    // Execute the selected operation
-    switch (choice) {
-        case 1:
-            minimum(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 2:
-            ripple_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 3:
-            brent_kung_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 4:
-            kogge_stone_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 5:
-            sklansky_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 6:
-            han_carlson_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 7:
-            ripple_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 8:
-            brent_kung_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 9:
-            kogge_stone_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 10:
-            sklansky_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 11:
-            han_carlson_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 12:
-            ladner_fischer_adder(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        case 13:
-            ladner_fischer_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-            break;
-        default:
-            printf("Invalid choice. Using Han-Carlson subtractor as default.\n");
-            han_carlson_subtractor(result, ciphertext1, ciphertext2, nb_bits, bk);
-    }    
-
-    double end_time = omp_get_wtime();
-    printf("Selected operation execution time: %.4f seconds.\n", end_time - start_time);
-
-    // Export the result to a file
-    FILE* answer_data = fopen("answer.data", "wb");
-    for (int i = 0; i < nb_bits; i++) export_gate_bootstrapping_ciphertext_toFile(answer_data, &result[i], params);
-    fclose(answer_data);
-
-    printf("Operation completed and result saved to answer.data\n");
-
-    // Clean up all pointers
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, result);
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext2);
-    delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext1);
-    delete_gate_bootstrapping_cloud_keyset(bk);
-
-    return 0;
-}
-

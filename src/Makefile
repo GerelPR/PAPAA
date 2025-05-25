@@ -1,16 +1,16 @@
-CC = gcc
+CC = g++
 CFLAGS = -fopenmp
 LDFLAGS = -ltfhe-spqlios-fma -lm
-SRCS = main1.c adders.c
-OBJS = main1.o adders.o
-TARGET = main1
+SRCS = main.cpp adders.c
+OBJS = main.o adders.o
+TARGET = main
 
-all: $(TARGET)
+all: clean $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-%.o: %.c
+%.o: %.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
