@@ -1,179 +1,131 @@
-# PPA
+# Performance Analyses of Parallel Prefix Adders in HE Scheme
 
+A comprehensive benchmarking tool for testing different adder algorithms in a Fully Homomorphic Encryption (FHE) environment using the TFHE library. This repository compares the performance of various parallel prefix adders operating on encrypted data.
 
-During the build process and execution, executables (`alice`, `cloud`, `verif`) and data files (`secret.key`, `cloud.key`, `cloud.data`, `answer.data`) will be created in the project's root directory.
+## Overview
 
-## Compilation Instructions
+This benchmark evaluates six different adder implementations:
 
-A single `Makefile` orchestrates the compilation of all necessary programs. Open your terminal in the project's root directory (where the `Makefile` is located) to run these commands.
+- **BKA** - Brent-Kung Adder
+- **HCA** - Han-Carlson Adder  
+- **KSA** - Kogge-Stone Adder
+- **LFA** - Ladner-Fischer Adder
+- **SKA** - Sklansky Adder
+- **RCA** - Ripple Carry Adder
 
-### 1. Compiling Alice's Program (`alice`)
-This program is responsible for generating cryptographic keys and encrypting the initial plaintexts.
+All adders operate on encrypted integers using TFHE (Torus Fully Homomorphic Encryption) with configurable bit widths and OpenMP parallelization.
 
-*   **To compile `alice.c` into an executable named `alice`:**
-    ```bash
-    make compile_alice
-    ```
+## Build Instructions
 
-### 2. Compiling the Cloud's Program (`cloud`)
-This program performs the homomorphic computations. It is highly configurable at compile-time.
+### Using the Makefile
 
-*   **To compile `cloud.c` into an executable named `cloud` with specific parameters:**
-    ```bash
-    make NB_BITS=<bits> NUM_THREADS=<threads> OPERATION_CHOICE=<choice_num>
-    ```
-    **Parameters:**
-    *   `NB_BITS=<bits>`: Specifies the number of bits for the operands in homomorphic operations (e.g., 8, 16, 32, 64). This value **must** be consistent with the bit-width used by Alice during data encryption. *Default: 16 if not specified.*
-    *   `NUM_THREADS=<threads>`: Sets the number of OpenMP threads to be used for parallel regions within the cloud computations (e.g., 1, 2, 4, 8). *Default: 4 if not specified.*
-    *   `OPERATION_CHOICE=<choice_num>`: An integer selecting the specific homomorphic operation or benchmark to be performed. *Default: 11 (Han-Carlson Subtractor) if not specified.*
-        The available choices are:
-        *   `1`: Minimum
-        *   `2`: Ripple Adder
-        *   `3`: Brent-Kung Adder
-        *   `4`: Kogge-Stone Adder
-        *   `5`: Sklansky Adder
-        *   `6`: Han-Carlson Adder
-        *   `7`: Ripple Subtractor
-        *   `8`: Brent-Kung Subtractor
-        *   `9`: Kogge-Stone Subtractor
-        *   `10`: Sklansky Subtractor
-        *   `11`: Han-Carlson Subtractor
-        *   `12`: Ladner-Fischer Adder
-        *   `13`: Ladner-Fischer Subtractor
-
-    **Example:** To compile the cloud program for 32-bit Kogge-Stone Addition using 8 threads:
-    ```bash
-    make NB_BITS=32 NUM_THREADS=8 OPERATION_CHOICE=4
-    ```
-    If you simply run `make`, the `cloud` program will be compiled using the default parameter values defined in the `Makefile`.
-
-### 3. Compiling the Verification Program (`verif`)
-This program is used by Alice to decrypt the encrypted results received from the cloud.
-
-*   **To compile `verif.c` into an executable named `verif`:**
-    ```bash
-    make verif
-    ```
-*   **To compile `verif` and view instructions on how to run it:**
-    ```bash
-    make compile_verif
-    ```
-    (Note: `make compile_verif` only compiles `verif` and prints usage instructions; it does not execute `verif`.)
-
-## Running the Programs: A Step-by-Step Workflow
-
-This section outlines the complete workflow from Alice generating data, the Cloud processing it, and Alice verifying the result.
-
-**Important:** The `NB_BITS` parameter used by Alice for encryption **must** match the `NB_BITS` used when compiling and running the Cloud program, and subsequently when Alice runs the verification program.
-
-**Example Scenario:**
-*   **Bit-width:** 32 bits
-*   **Cloud Operation:** Brent-Kung Adder (Operation Choice: `3`)
-*   **Cloud Threads:** 8
-
-### Step 1: Clean Project (Optional)
-It's good practice to start with a clean state, especially if you are changing parameters.
 ```bash
+# Normal incremental build
+make
+
+# Clean only
 make clean
 ```
 
-This command removes all previously compiled executables and generated data files.
+### Manual Compilation
 
-### Step 2: Alice - Key Generation and Data Encryption
+```bash
+g++ -fopenmp -o main main.cpp adders.cpp -ltfhe-spqlios-fma -lm
+```
 
-In this step, Alice generates her cryptographic keys and encrypts her plaintext data.
+## Usage
 
-1.  **Ensure Alice's program is compiled:**
-    If you haven't compiled `alice` yet, or if you made changes to `src/alice.c`, compile it:
-    ```bash
-    make compile_alice
-    ```
-    *(Alternatively, `make compile_alice` also compiles `alice` and prints usage instructions.)*
+```bash
+./main <nb_bits> <num_threads>
+```
 
-2.  **Run Alice's program to generate keys and encrypt data:**
-    Execute the compiled `alice` program from your terminal. Provide the desired number of bits for encryption as a command-line argument. For our 32-bit example:
-    ```bash
-    ./alice 32
-    ```
-    When this command runs, `alice.c` will perform the following:
-    *   Use 32 bits for its internal operations, including encrypting its predefined plaintext values (e.g., 55 and 15, which are currently hardcoded in `src/alice.c`).
-    *   **Output Files:**
-        *   `secret.key`: This file contains Alice's private secret key. **Alice must keep this file secure and private.** It is required for decrypting the final result.
-        *   `cloud.key`: This file contains the public cloud key. This key allows the cloud to perform homomorphic operations but does not allow it to decrypt data. This file is intended to be sent to the Cloud.
-        *   `cloud.data`: This file contains the encrypted versions of Alice's initial plaintext numbers. This is also sent to the Cloud for computation.
+### Parameters
 
-    After execution, you should see confirmation messages from the `alice` program, and the three files (`secret.key`, `cloud.key`, `cloud.data`) will be present in your project's root directory.
+- `nb_bits`: Number of bits for the encrypted integers (e.g., 8, 16, 32)
+- `num_threads`: Number of OpenMP threads to use for parallel operations
 
-    *(At this point, in a real-world scenario, Alice would securely transmit `cloud.key` and `cloud.data` to the Cloud service.)*
+### Example
 
-### Step 3: Cloud - Homomorphic Computation
+```bash
+# Compiling files
+make
 
-The Cloud now receives `cloud.key` and `cloud.data` from Alice and performs the requested computation homomorphically.
+# Test with 16-bit integers using 8 threads
+./main 16 8
 
-1.  **Compile the Cloud's program with parameters matching Alice's data and the desired operation:**
-    For our example (32 bits, 8 threads, Brent-Kung Adder op 3):
-    ```bash
-    make NB_BITS=32 NUM_THREADS=8 OPERATION_CHOICE=3
-    ```
-    This command compiles `src/cloud.c` into an executable named `cloud`, embedding the specified parameters.
+# Test with 32-bit integers using 4 threads  
+./main 32 4
+```
 
-2.  **Run the Cloud's program:**
-    Ensure `cloud.key` and `cloud.data` (generated by Alice in Step 2) are in the same directory. Then, execute the compiled `cloud` program:
-    ```bash
-    ./cloud
-    ```
-    When this command runs, the `cloud` program will:
-    *   Load `cloud.key` (the public cloud key).
-    *   Load `cloud.data` (the encrypted inputs from Alice).
-    *   Perform the homomorphic computation specified during its compilation (e.g., Brent-Kung addition on the encrypted 32-bit inputs).
-    *   **Output File:**
-        *   `answer.data`: This file contains the encrypted 32-bit result of the computation.
+## Sample Output
 
-    You should see output from the `cloud` program indicating the operation being performed and potentially timing information.
+```
+FHE operations will use nb_bits = 8
+Attempting to use 8 OpenMP threads. Actual max threads available: 8
+--------------------------------------------
+Generating keys...
+--------------------------------------------
+Original Plaintext 1 (int16_t): 15
+Original Plaintext 2 (int16_t): 42
+--------------------------------------------
+Encrypting plaintexts to 8 bits...
+--------------------------------------------
+Gate Benchmark:
+Gate duration: 25.30 ms
+--------------------------------------------
+BKA elapsed time: 726 ms, ans: 57
+HCA elapsed time: 563 ms, ans: 121
+KSA elapsed time: 606 ms, ans: 57
+LFA elapsed time: 630 ms, ans: 57
+SKA elapsed time: 522 ms, ans: 57
+RCA elapsed time: 1056 ms, ans: 57
+--------------------------------------------
+```
 
-    *(In a real-world scenario, the Cloud service would then send `answer.data` back to Alice.)*
+## Project Structure
 
-### Step 4: Alice (Verification) - Decrypt and Verify Result
+```
+.
+├── main.cpp           # Main benchmark program
+├── adders.c           # Adder implementations
+├── adders.h           # Adder function declarations
+├── Makefile           # Build configuration
+└── README.md          # This file
+```
 
-Alice receives `answer.data` from the Cloud and uses her secret key to decrypt it.
+## Implementation Details
 
-1.  **Ensure Alice's verification program is compiled:**
-    If you haven't compiled `verif` yet, or if you made changes to `src/verif.c`, compile it:
-    ```bash
-    make compile_verif
-    ```
-    *(Alternatively, `make compile_verif` also compiles `verif` and prints usage instructions.)*
+### Security Parameters
 
-2.  **Run the verification program to decrypt the result:**
-    Execute the compiled `verif` program. Provide the number of bits that were used for the computation (which must match the `NB_BITS` used by the Cloud and Alice) as a command-line argument.
-    ```bash
-    ./verif 32
-    ```
-    When this command runs, the `verif` program will:
-    *   Load `secret.key` (Alice's private key).
-    *   Load `answer.data` (the encrypted result from the Cloud).
-    *   Decrypt the 32-bit encrypted result.
-    *   Print the final plaintext value to the console.
+- **Minimum Lambda**: 110 (security parameter)
+- **Random Seed**: Fixed seed (314, 1592, 657) for reproducible results
 
-This completes the full cycle of homomorphic encryption, computation, and decryption. You can repeat this process with different bit-widths, operations, or plaintext values to experiment further.
+### Encryption Process
 
-## Setup Instructions
+1. Generate TFHE parameters and keys
+2. Encrypt two 16-bit plaintexts (15 and 42) bit-by-bit
+3. Perform homomorphic addition using various adder algorithms
+4. Decrypt and verify results
 
-Before you can compile and run this project, you need to have the TFHE library and its dependencies installed on your system.
+### Performance Metrics
 
-### 1. Prerequisites for TFHE
+- **Gate Benchmark**: Measures single AND gate operation time
+- **Adder Timing**: End-to-end execution time for each adder type
+- **Verification**: Decrypts results to ensure correctness
 
-The TFHE library typically has the following dependencies:
+## Configuration
 
-*   **A C/C++ Compiler:** GCC (version 5 or newer recommended) or Clang.
-*   **CMake:** Version 3.5 or newer (if compiling TFHE from source).
-*   **FFTW3:** (Fastest Fourier Transform in the West) library, version 3.3 or newer. This is crucial for performance.
-    *   On Debian/Ubuntu: `sudo apt-get install libfftw3-dev libfftw3-double3`
-    *   On macOS (using Homebrew): `brew install fftw`
-    *   On other systems, refer to FFTW3 installation guides.
-*   **Boost Libraries:** (Sometimes required, depending on the TFHE version or specific modules, though often not for the core functionalities used here). Check the specific TFHE version's documentation if you encounter issues.
-*   **OpenMP:** For parallel processing. Usually included with modern GCC/Clang compilers.
+### Compile-time Options
 
-### 2. Installing the TFHE Library
+```cpp
+#define NB_BITS 16        // Default bit width
+#define NUM_THREADS 8     // Default thread count
+```
 
-https://tfhe.github.io/tfhe/installation.html
+### Makefile Configuration
+
+```makefile
+CC = g++                          # Compiler
+CFLAGS = -fopenmp                 # Compiler flags
+LDFLAGS = -ltfhe-spqlios-fma -lm  # Linker flags
+```
