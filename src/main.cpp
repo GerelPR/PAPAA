@@ -37,21 +37,17 @@ int main(int argc, char *argv[]) {
     const TFheGateBootstrappingCloudKeySet* bk = &sk->cloud;
     printf("--------------------------------------------\n");
 
-    int16_t plaintext1_orig_val = 15;
-    int16_t plaintext2_orig_val = 42;
+    int64_t plaintext1 = 15;
+    int64_t plaintext2 = 42;
 
-    printf("Original Plaintext 1 (int16_t): %d\n", plaintext1_orig_val);
-    printf("Original Plaintext 2 (int16_t): %d\n", plaintext2_orig_val);
+    printf("Plaintext 1: %ld, Plaintext 2: %ld\n", plaintext1, plaintext2);
 
     LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
     LweSample* ciphertext2 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
 
-    
     for (int i = 0; i < nb_bits; i++) {
-        int bit1 = ((int64_t)plaintext1_orig_val >> i) & 1;
-        int bit2 = ((int64_t)plaintext2_orig_val >> i) & 1;
-        bootsSymEncrypt(&ciphertext1[i], bit1, sk);
-        bootsSymEncrypt(&ciphertext2[i], bit2, sk);
+        bootsSymEncrypt(&ciphertext1[i], (plaintext1>>i)&1, sk);
+        bootsSymEncrypt(&ciphertext2[i], (plaintext2>>i)&1, sk);
     }
 
     AdderInfo adders_to_test[] = {
@@ -80,10 +76,8 @@ int main(int argc, char *argv[]) {
     int iterations = 10;
     for (int i = 0; i < num_adders; ++i) {
         AdderInfo adder_info = adders_to_test[i];
-
-        int total_time = 0;
-
         LweSample* result_ciphertext = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
+        int total_time = 0;
 
         for (int iter = 0; iter < iterations; ++iter) {
             auto start = std::chrono::steady_clock::now();
