@@ -26,9 +26,7 @@ int main(int argc, char *argv[]) {
 
     printf("FHE operations will use nb_bits = %d\n", nb_bits);
     printf("Attempting to use %d OpenMP threads. Actual max threads available: %d\n", num_threads, omp_get_max_threads());
-    printf("--------------------------------------------\n");
 
-    printf("Generating keys...\n");
     const int minimum_lambda = 110;
     TFheGateBootstrappingParameterSet* params = new_default_gate_bootstrapping_parameters(minimum_lambda);
 
@@ -44,12 +42,10 @@ int main(int argc, char *argv[]) {
 
     printf("Original Plaintext 1 (int16_t): %d\n", plaintext1_orig_val);
     printf("Original Plaintext 2 (int16_t): %d\n", plaintext2_orig_val);
-    printf("--------------------------------------------\n");
 
     LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
     LweSample* ciphertext2 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
 
-    printf("Encrypting plaintexts to %d bits...\n", nb_bits);
     
     for (int i = 0; i < nb_bits; i++) {
         int bit1 = ((int64_t)plaintext1_orig_val >> i) & 1;
@@ -57,7 +53,6 @@ int main(int argc, char *argv[]) {
         bootsSymEncrypt(&ciphertext1[i], bit1, sk);
         bootsSymEncrypt(&ciphertext2[i], bit2, sk);
     }
-    printf("--------------------------------------------\n");
 
     AdderInfo adders_to_test[] = {
         {"BKA", brent_kung_adder},
@@ -69,8 +64,7 @@ int main(int argc, char *argv[]) {
     };
     const int num_adders = sizeof(adders_to_test) / sizeof(adders_to_test[0]);
 
-    printf("Gate Benchmark:\n");
-    int gate_iterations = 10;
+    int gate_iterations = 100;
     LweSample* gate_result = new_gate_bootstrapping_ciphertext(params);
     
     auto gate_start = std::chrono::steady_clock::now();
@@ -83,16 +77,23 @@ int main(int argc, char *argv[]) {
     printf("Gate duration: %.2f ms\n", (double)gate_ms / gate_iterations);
     printf("--------------------------------------------\n");
 
+    int iterations = 10;
     for (int i = 0; i < num_adders; ++i) {
         AdderInfo adder_info = adders_to_test[i];
+
+        int total_time = 0;
+
         LweSample* result_ciphertext = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
 
-        auto start = std::chrono::steady_clock::now();
-        adder_info.function(result_ciphertext, ciphertext1, ciphertext2, nb_bits, bk, num_threads);
-        auto end = std::chrono::steady_clock::now();
+        for (int iter = 0; iter < iterations; ++iter) {
+            auto start = std::chrono::steady_clock::now();
+            adder_info.function(result_ciphertext, ciphertext1, ciphertext2, nb_bits, bk, num_threads);
+            auto end = std::chrono::steady_clock::now();
 
-        auto diff = end - start;
-        int sec = std::chrono::duration<double, std::milli>(diff).count();
+            auto diff = end - start;
+            double elapsed_ms = std::chrono::duration<double, std::milli>(diff).count();
+            total_time += elapsed_ms;
+        }
 
         int64_t raw_decrypted_pattern = 0;
         for (int k = 0; k < nb_bits; k++) {
@@ -107,7 +108,7 @@ int main(int argc, char *argv[]) {
 
         delete_gate_bootstrapping_ciphertext_array(nb_bits, result_ciphertext);
 
-        printf("%s elapsed time: %d ms, ans: %ld\n", adder_info.name, sec, accumulated_decrypted_value);
+        printf("%s average elapsed time: %d ms, ans: %ld\n", adder_info.name, total_time/iterations, accumulated_decrypted_value);
     }
     printf("--------------------------------------------\n");
 
