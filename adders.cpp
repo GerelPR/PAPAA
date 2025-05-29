@@ -69,7 +69,7 @@ void full_adder(LweSample* sum, LweSample* carry_out, const LweSample* a, const 
 // The addition is done bit by bit, from the LSB to the MSB.
 // A half_adder is used for the LSB, and full_adders are used for the remaining bits.
 // The carry out of one stage is rippled (fed as carry_in) to the next stage.
-void ripple_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
+void ripple_carry_adder(LweSample* result, const LweSample* a, const LweSample* b, int nb_bits, const TFheGateBootstrappingCloudKeySet* bk, int thread_num) {
 
     // Allocate a ciphertext for the carry and initialize it to 0
     LweSample* carry = new_gate_bootstrapping_ciphertext(bk->params);

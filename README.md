@@ -74,7 +74,7 @@ Gate Benchmark:
 Gate duration: 25.30 ms
 --------------------------------------------
 BKA elapsed time: 726 ms, ans: 57
-HCA elapsed time: 563 ms, ans: 121
+HCA elapsed time: 563 ms, ans: 57
 KSA elapsed time: 606 ms, ans: 57
 LFA elapsed time: 630 ms, ans: 57
 SKA elapsed time: 522 ms, ans: 57
