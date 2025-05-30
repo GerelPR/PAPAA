@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     const int num_threads = atoi(argv[4]);
 
     printf("FHE operations will use nb_bits = %d\n", nb_bits);
-    printf("Attempting to use %d OpenMP threads. Actual max threads available: %d\n", num_threads, omp_get_max_threads());
+    printf("Using %d OpenMP threads.", num_threads);
 
     const int minimum_lambda = 110;
     TFheGateBootstrappingParameterSet* params = new_default_gate_bootstrapping_parameters(minimum_lambda);
@@ -37,7 +37,6 @@ int main(int argc, char *argv[]) {
 
     TFheGateBootstrappingSecretKeySet* sk = new_random_gate_bootstrapping_secret_keyset(params);
     const TFheGateBootstrappingCloudKeySet* bk = &sk->cloud;
-    printf("--------------------------------------------\n");
 
     printf("Plaintext 1: %ld, Plaintext 2: %ld\n", plaintext1, plaintext2);
 

@@ -41,15 +41,13 @@ make
 ## Sample Output
 
 FHE operations will use nb_bits = 16
-Attempting to use 8 OpenMP threads. Actual max threads available: 8
+Using 8 OpenMP threads.Plaintext 1: 5, Plaintext 2: 8
 --------------------------------------------
-Plaintext 1: 15, Plaintext 2: 42
---------------------------------------------
-BKA elapsed time: 1110.1 ms, ans: 57
-HCA elapsed time: 955.5 ms, ans: 57
-KSA elapsed time: 1204.9 ms, ans: 57
-LFA elapsed time: 956.2 ms, ans: 57
-SKA elapsed time: 1017.8 ms, ans: 57
-RCA elapsed time: 2391.0 ms, ans: 57
+BKA elapsed time: 1533.7 ms, ans: 13
+HCA elapsed time: 1323.3 ms, ans: 13
+KSA elapsed time: 1757.3 ms, ans: 13
+LFA elapsed time: 1353.9 ms, ans: 13
+SKA elapsed time: 1450.0 ms, ans: 13
+RCA elapsed time: 2051.5 ms, ans: 13
 --------------------------------------------
 ```
