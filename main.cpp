@@ -26,8 +26,7 @@ int main(int argc, char *argv[]) {
     const int nb_bits = atoi(argv[3]);
     const int num_threads = atoi(argv[4]);
 
-    printf("FHE operations will use nb_bits = %d\n", nb_bits);
-    printf("Using %d OpenMP threads.", num_threads);
+    printf("num1 = %ld\nnum2 = %ld\nnb_bits = %d\nnum_threads = %d\n", plaintext1, plaintext2, nb_bits, num_threads);
 
     const int minimum_lambda = 110;
     TFheGateBootstrappingParameterSet* params = new_default_gate_bootstrapping_parameters(minimum_lambda);
@@ -37,8 +36,6 @@ int main(int argc, char *argv[]) {
 
     TFheGateBootstrappingSecretKeySet* sk = new_random_gate_bootstrapping_secret_keyset(params);
     const TFheGateBootstrappingCloudKeySet* bk = &sk->cloud;
-
-    printf("Plaintext 1: %ld, Plaintext 2: %ld\n", plaintext1, plaintext2);
 
     LweSample* ciphertext1 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
     LweSample* ciphertext2 = new_gate_bootstrapping_ciphertext_array(nb_bits, params);
@@ -58,7 +55,7 @@ int main(int argc, char *argv[]) {
     };
     const int num_adders = sizeof(adders_to_test) / sizeof(adders_to_test[0]);
 
-    printf("--------------------------------------------\n");
+    printf("------------------------------------\n");
 
     for (int i = 0; i < num_adders; ++i) {
         AdderInfo adder_info = adders_to_test[i];
@@ -87,7 +84,7 @@ int main(int argc, char *argv[]) {
 
         printf("%s elapsed time: %.1f ms, ans: %ld\n", adder_info.name, elapsed_ms, accumulated_decrypted_value);
     }
-    printf("--------------------------------------------\n");
+    printf("------------------------------------\n");
 
     delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext1);
     delete_gate_bootstrapping_ciphertext_array(nb_bits, ciphertext2);
